@@ -1,0 +1,9 @@
+options:
+    modules:
+        type: string
+        default: ''
+        description: A list of modules to enable.
+    server_name:
+        type: string
+        default: 'example.local'
+        description: the server name to configure in virtual hosts.

@@ -1,0 +1,13 @@
+name: dummy-vhost
+summary: A dummy virtual host for apache2
+maintainer: Charmbase Developers https://github.com/canonical/charmbase/graphs/contributors
+description: |
+    A dummy virtual host for apache2.
+tags: []
+series:
+    - bionic
+    - disco
+    - eoan
+provides:
+    vhost-config:
+        interface: apache-vhost-config

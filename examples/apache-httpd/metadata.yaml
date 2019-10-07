@@ -1,0 +1,18 @@
+name: apache-httpd
+summary: Apache HTTP Server
+maintainer: Charmbase Developers https://github.com/canonical/charmbase/graphs/contributors
+description: |
+    An open-source HTTP server by the Apache Software Foundation.
+tags:
+    - app-servers
+series:
+    - bionic
+    - disco
+    - eoan
+provides:
+    apache-website:
+        interface: apache-website
+        scope: container
+requires:
+    vhost-config:
+        interface: apache-vhost-config
