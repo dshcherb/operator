@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 
-from op.charm import CharmBase, CharmEvents
-from op.framework import (
+from ops.charm import CharmBase, CharmEvents
+from ops.framework import (
     Event,
     EventBase,
     StoredState,
 )
 
-from op.main import main
+from ops.model import ActiveStatus
+
+from ops.main import main
 
 import subprocess
 import base64
 
 from pathlib import Path
+
 
 class DummyVhostReadyEvent(EventBase):
     pass
@@ -69,7 +72,7 @@ class Charm(CharmBase):
         self.state.ready = False
 
     def on_vhost_ready(self, event):
-        status_set('active', 'Dummy vhost is ready.')
+        self.framework.model.unit.status = ActiveStatus()
 
     def on_vhost_config_relation_joined(self, event):
         if not self.state.ready:
@@ -82,23 +85,6 @@ class Charm(CharmBase):
         vhost_rdata = '- {' f'port: "{self.VHOST_PORT}", template: {vhost_content}' '}'
         event.relation.data[self.framework.model.unit]['vhosts'] = vhost_rdata
 
-def status_set(workload_state, message):
-    """Set the workload state with a message
-
-    Use status-set to set the workload state with a message which is visible
-    to the user via juju status.
-
-    workload_state -- valid juju workload state.
-    message        -- status update message
-    """
-    valid_states = ['maintenance', 'blocked', 'waiting', 'active']
-
-    if workload_state not in valid_states:
-        raise ValueError(
-            '{!r} is not a valid workload state'.format(workload_state)
-        )
-
-    subprocess.check_call(['status-set', workload_state, message])
 
 def log(message, level=None):
     """Write a message to the juju log"""

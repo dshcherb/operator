@@ -16,3 +16,6 @@ provides:
 requires:
     vhost-config:
         interface: apache-vhost-config
+peers:
+    httpd-peer:
+        interface: httpd-peer
