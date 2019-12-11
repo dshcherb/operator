@@ -26,9 +26,19 @@ class Handle:
     def __init__(self, parent, kind, key):
         if parent and not isinstance(parent, Handle):
             parent = parent.handle
-        self.parent = parent
-        self.kind = kind
-        self.key = key
+        self._parent = parent
+        self._kind = kind
+        self._key = key
+        if parent:
+            if key:
+                self._path = f"{parent}/{kind}[{key}]"
+            else:
+                self._path = f"{parent}/{kind}"
+        else:
+            if key:
+                self._path = f"{kind}[{key}]"
+            else:
+                self._path = f"{kind}"
 
     def nest(self, kind, key):
         return Handle(self, kind, key)
@@ -43,18 +53,20 @@ class Handle:
         return self.path
 
     @property
+    def parent(self):
+        return self._parent
+
+    @property
+    def kind(self):
+        return self._kind
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
     def path(self):
-        # TODO Cache result and either clear cache when attributes change, or make it read-only.
-        if self.parent:
-            if self.key:
-                return f"{self.parent}/{self.kind}[{self.key}]"
-            else:
-                return f"{self.parent}/{self.kind}"
-        else:
-            if self.key:
-                return f"{self.kind}[{self.key}]"
-            else:
-                return f"{self.kind}"
+        return self._path
 
     @classmethod
     def from_path(cls, path):
@@ -156,9 +168,7 @@ class BoundEvent:
         The current storage state is committed before and after each observer is notified.
         """
         framework = self.emitter.framework
-        # TODO This needs to be persisted.
-        framework._event_count += 1
-        key = str(framework._event_count)
+        key = framework._next_event_key()
         event = self.event_type(Handle(self.emitter, self.event_kind, key), *args, **kwargs)
         framework._emit(event)
 
@@ -261,6 +271,7 @@ class EventsBase(Object):
 
 
 class PrefixedEvents:
+
     def __init__(self, emitter, key):
         self._emitter = emitter
         self._prefix = key.replace("-", "_") + '_'
@@ -272,8 +283,10 @@ class PrefixedEvents:
 class PreCommitEvent(EventBase):
     pass
 
+
 class CommitEvent(EventBase):
     pass
+
 
 class FrameworkEvents(EventsBase):
     pre_commit = Event(PreCommitEvent)
@@ -371,13 +384,20 @@ class Framework(Object):
         self.charm_dir = charm_dir
         self.meta = meta
         self.model = model
-        self._event_count = 0
         self._observers = []      # [(observer_path, method_name, parent_path, event_key)]
         self._observer = weakref.WeakValueDictionary()       # {observer_path: observer}
         self._type_registry = {}  # {(parent_path, kind): cls}
         self._type_known = set()  # {cls}
 
         self._storage = SQLiteStorage(data_path)
+
+        # We can't use the higher-level StoredState because it relies on events.
+        self.register_type(StoredStateData, None, StoredStateData.handle_kind)
+        self._stored = StoredStateData(self, '_stored')
+        try:
+            self._stored = self.load_snapshot(self._stored.handle)
+        except NoSnapshotError:
+            self._stored['event_count'] = 0
 
     def close(self):
         self._storage.close()
@@ -388,6 +408,8 @@ class Framework(Object):
         # Make sure snapshots are saved by instances of StoredStateData. Any possible state
         # modifications in on_commit handlers of instances of other classes will not be persisted.
         self.on.commit.emit()
+        # Save our event count after all events have been emitted.
+        self.save_snapshot(self._stored)
         self._storage.commit()
 
     def register_type(self, cls, parent, kind=None):
@@ -482,12 +504,27 @@ class Framework(Object):
             if not hasattr(observer, method_name):
                 raise RuntimeError(f'Observer method not provided explicitly and {type(observer).__name__} type has no "{method_name}" method')
 
-        # TODO Validate that the method has the right signature here.
+        # Validate that the method has an acceptable call signature.
+        sig = inspect.signature(getattr(observer, method_name))
+        # Self isn't included in the params list, so the first arg will be the event.
+        extra_params = list(sig.parameters.values())[1:]
+        if not sig.parameters:
+            raise TypeError(f'{type(observer).__name__}.{method_name} must accept event parameter')
+        elif any(param.default is inspect.Parameter.empty for param in extra_params):
+            # Allow for additional optional params, since there's no reason to exclude them, but
+            # required params will break.
+            raise TypeError(f'{type(observer).__name__}.{method_name} has extra required parameter')
 
         # TODO Prevent the exact same parameters from being registered more than once.
 
         self._observer[observer.handle.path] = observer
         self._observers.append((observer.handle.path, method_name, emitter_path, event_kind))
+
+    def _next_event_key(self):
+        """Return the next event key that should be used, incrementing the internal counter."""
+        # Increment the count first; this means the keys will start at 1, and 0 means no events have been emitted.
+        self._stored['event_count'] += 1
+        return str(self._stored['event_count'])
 
     def _emit(self, event):
         """See BoundEvent.emit for the public way to call this."""
@@ -555,8 +592,10 @@ class Framework(Object):
 class StoredStateChanged(EventBase):
     pass
 
+
 class StoredStateEvents(EventsBase):
     changed = Event(StoredStateChanged)
+
 
 class StoredStateData(Object):
 
@@ -588,6 +627,7 @@ class StoredStateData(Object):
         if self.dirty:
             self.framework.save_snapshot(self)
             self.dirty = False
+
 
 class BoundStoredState:
 
@@ -668,6 +708,7 @@ def _wrap_stored(parent_data, value):
     if t is set:
         return StoredSet(parent_data, value)
     return value
+
 
 def _unwrap_stored(parent_data, value):
     t = type(value)

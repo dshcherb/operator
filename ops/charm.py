@@ -1,4 +1,4 @@
-from op.framework import Object, Event, EventBase, EventsBase
+from ops.framework import Object, Event, EventBase, EventsBase
 
 
 class HookEvent(EventBase):
@@ -8,70 +8,92 @@ class HookEvent(EventBase):
 class InstallEvent(HookEvent):
     pass
 
+
 class StartEvent(HookEvent):
     pass
+
 
 class StopEvent(HookEvent):
     pass
 
+
 class ConfigChangedEvent(HookEvent):
     pass
+
 
 class UpdateStatusEvent(HookEvent):
     pass
 
+
 class UpgradeCharmEvent(HookEvent):
     pass
+
 
 class PreSeriesUpgradeEvent(HookEvent):
     pass
 
+
 class PostSeriesUpgradeEvent(HookEvent):
     pass
 
+
 class LeaderElectedEvent(HookEvent):
     pass
+
 
 class LeaderSettingsChangedEvent(HookEvent):
     pass
 
 
 class RelationEvent(HookEvent):
-    def __init__(self, handle, relation):
+    def __init__(self, handle, relation, app=None, unit=None):
         super().__init__(handle)
+
+        if unit and unit.app != app:
+            raise RuntimeError(f'cannot create RelationEvent with application {app} and unit {unit}')
+
         self.relation = relation
+        self.app = app
+        self.unit = unit
 
     def snapshot(self):
-        return {
+        snapshot = {
             'relation_name': self.relation.name,
             'relation_id': self.relation.id,
         }
+        if self.app:
+            snapshot['app_name'] = self.app.name
+        if self.unit:
+            snapshot['unit_name'] = self.unit.name
+        return snapshot
 
     def restore(self, snapshot):
         self.relation = self.framework.model.get_relation(snapshot['relation_name'], snapshot['relation_id'])
 
-class RelationUnitEvent(RelationEvent):
-    def __init__(self, handle, relation, unit):
-        super().__init__(handle, relation)
-        self.unit = unit
+        app_name = snapshot.get('app_name')
+        if app_name:
+            self.app = self.framework.model.get_app(app_name)
+        else:
+            self.app = None
 
-    def snapshot(self):
-        snapshot = super().snapshot()
-        snapshot['unit_name'] = self.unit.name
-        return snapshot
+        unit_name = snapshot.get('unit_name')
+        if unit_name:
+            self.unit = self.framework.model.get_unit(unit_name)
+        else:
+            self.unit = None
 
-    def restore(self, snapshot):
-        super().restore(snapshot)
-        self.unit = self.framework.model.get_unit(snapshot['unit_name'])
 
-class RelationJoinedEvent(RelationUnitEvent):
+class RelationJoinedEvent(RelationEvent):
     pass
 
-class RelationChangedEvent(RelationUnitEvent):
+
+class RelationChangedEvent(RelationEvent):
     pass
 
-class RelationDepartedEvent(RelationUnitEvent):
+
+class RelationDepartedEvent(RelationEvent):
     pass
+
 
 class RelationBrokenEvent(RelationEvent):
     pass
@@ -80,8 +102,10 @@ class RelationBrokenEvent(RelationEvent):
 class StorageEvent(HookEvent):
     pass
 
+
 class StorageAttachedEvent(StorageEvent):
     pass
+
 
 class StorageDetachingEvent(StorageEvent):
     pass
@@ -115,7 +139,7 @@ class CharmBase(Object):
             self.on.define_event(f'{relation_name}_relation_departed', RelationDepartedEvent)
             self.on.define_event(f'{relation_name}_relation_broken', RelationBrokenEvent)
 
-        for storage_name in self.framework.meta.storage:
+        for storage_name in self.framework.meta.storages:
             storage_name = storage_name.replace('-', '_')
             self.on.define_event(f'{storage_name}_storage_attached', StorageAttachedEvent)
             self.on.define_event(f'{storage_name}_storage_detaching', StorageDetachingEvent)
@@ -159,8 +183,8 @@ class CharmMeta:
         self.relations.update(self.requires)
         self.relations.update(self.provides)
         self.relations.update(self.peers)
-        self.storage = {name: StorageMeta(name, store)
-                        for name, store in raw.get('storage', {}).items()}
+        self.storages = {name: StorageMeta(name, storage)
+                         for name, storage in raw.get('storage', {}).items()}
         self.resources = {name: ResourceMeta(name, res)
                           for name, res in raw.get('resources', {}).items()}
         self.payloads = {name: PayloadMeta(name, payload)

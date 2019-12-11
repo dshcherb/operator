@@ -7,10 +7,10 @@ import shutil
 
 from pathlib import Path
 
-from op.charm import CharmBase, CharmMeta
-from op.charm import CharmEvents
-from op.framework import Framework, Event, EventBase
-from op.model import Model, ModelBackend
+from ops.charm import CharmBase, CharmMeta
+from ops.charm import CharmEvents
+from ops.framework import Framework, Event, EventBase
+from ops.model import Model, ModelBackend
 
 
 class TestCharm(unittest.TestCase):
@@ -42,7 +42,7 @@ class TestCharm(unittest.TestCase):
         self.addCleanup(cleanup)
 
     def create_framework(self):
-        model = Model('local/0', list(self.meta.relations), ModelBackend())
+        model = Model('local/0', self.meta, ModelBackend())
         framework = Framework(self.tmpdir / "framework.data", self.tmpdir, self.meta, model)
         self.addCleanup(framework.close)
         return framework
@@ -174,10 +174,10 @@ class TestCharm(unittest.TestCase):
             },
         })
 
-        self.assertIsNone(self.meta.storage['stor1'].multiple_range)
-        self.assertEqual(self.meta.storage['stor2'].multiple_range, (2, 2))
-        self.assertEqual(self.meta.storage['stor3'].multiple_range, (2, None))
-        self.assertEqual(self.meta.storage['stor-4'].multiple_range, (2, 4))
+        self.assertIsNone(self.meta.storages['stor1'].multiple_range)
+        self.assertEqual(self.meta.storages['stor2'].multiple_range, (2, 2))
+        self.assertEqual(self.meta.storages['stor3'].multiple_range, (2, None))
+        self.assertEqual(self.meta.storages['stor-4'].multiple_range, (2, 4))
 
         charm = MyCharm(self.create_framework(), None)
 
